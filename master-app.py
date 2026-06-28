@@ -19,23 +19,23 @@ naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
-st.title("🖨️ Bambulab print kø MEK ")
+st.title("🖨️ Bambulab MEK print kø ")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
 st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
 
-# --- NYTT: LOGIKK FOR PERMANENT FIL-MINNE ---
-FILNAVN = "koe_data.json"
+# --- TO SEPARATE FILER FOR MINNE ---
+FILNAVN_KOE = "koe_data.json"
+FILNAVN_FEEDBACK = "feedback_data.json"  # NY: Lagres evig (nullstilles IKKE ved midnatt)
 
 
 def last_lagrede_data():
-    """Henter data fra JSON-filen hvis den eksisterer og er fra i dag."""
-    if os.path.exists(FILNAVN):
+    """Henter kø-data hvis filen er fra i dag."""
+    if os.path.exists(FILNAVN_KOE):
         try:
-            with open(FILNAVN, "r", encoding="utf-8") as f:
+            with open(FILNAVN_KOE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # Sjekk om filen er fra i dag (24-timers automatisk nullstilling)
                 if data.get("dato") == dagens_dato_streng:
                     return data
         except Exception:
@@ -43,46 +43,54 @@ def last_lagrede_data():
     return None
 
 
-def lagre_data_til_fil():
-    """Lagrer gjeldende status til JSON-filen."""
-    data_som_skal_lagres = {
-        "dato": dagens_dato_streng,
-        "tokens": st.session_state.tokens,
-        "logg": st.session_state.logg,
-        "ratings": st.session_state.ratings
-    }
-    with open(FILNAVN, "w", encoding="utf-8") as f:
-        json.dump(data_som_skal_lagres, f, ensure_ascii=False, indent=4)
+def last_feedback_data():
+    """Henter all feedback som noen gang er sendt inn."""
+    if os.path.exists(FILNAVN_FEEDBACK):
+        try:
+            with open(FILNAVN_FEEDBACK, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"ratings": [5, 5, 4], "kommentarer": []}  # Start-verdier hvis filen er tom
 
 
-# Last inn minnet hvis det finnes
-lagret_minne = last_lagrede_data()
+def lagre_koe_til_fil():
+    with open(FILNAVN_KOE, "w", encoding="utf-8") as f:
+        json.dump({"dato": dagens_dato_streng, "tokens": st.session_state.tokens, "logg": st.session_state.logg}, f,
+                  ensure_ascii=False, indent=4)
 
-# 2. Sette opp "State" basert på fil-minnet
+
+def lagre_feedback_til_fil():
+    with open(FILNAVN_FEEDBACK, "w", encoding="utf-8") as f:
+        json.dump({"ratings": st.session_state.ratings, "kommentarer": st.session_state.feedback_kommentarer}, f,
+                  ensure_ascii=False, indent=4)
+
+
+# Last inn minner
+lagret_koe = last_lagrede_data()
+lagret_feedback = last_feedback_data()
+
+# Sette opp session_state ut fra filene
 if "tokens" not in st.session_state:
-    if lagret_minne:
-        st.session_state.tokens = lagret_minne["tokens"]
-        st.session_state.logg = lagret_minne["logg"]
-        st.session_state.ratings = lagret_minne["ratings"]
+    if lagret_koe:
+        st.session_state.tokens = lagret_koe["tokens"]
+        st.session_state.logg = lagret_koe["logg"]
     else:
-        # Hvis ingen fil finnes (eller den er utdatert), lag ny blank dag
         st.session_state.tokens = []
         for i in range(1, 25):
             time_tall = i
             timer_streng = f"{time_tall:02d}:00" if time_tall < 24 else "24:00"
             er_nattskift = 1 <= i <= 7
             st.session_state.tokens.append({
-                "id": i,
-                "tid": timer_streng,
-                "bruker": "Ledig",
-                "status": "Ledig",
-                "nattskift": er_nattskift,
-                "time_verdi": time_tall,
-                "dag": "i_dag"
+                "id": i, "tid": timer_streng, "bruker": "Ledig", "status": "Ledig", "nattskift": er_nattskift,
+                "time_verdi": time_tall, "dag": "i_dag"
             })
         st.session_state.logg = ["Systemet startet. Alt klart for print!"]
-        st.session_state.ratings = [5, 5, 4]
-        lagre_data_til_fil()
+        lagre_koe_til_fil()
+
+if "ratings" not in st.session_state:
+    st.session_state.ratings = lagret_feedback["ratings"]
+    st.session_state.feedback_kommentarer = lagret_feedback["kommentarer"]
 
 # 3. Automatisk frigjøring av gamle timer
 naa_time = naa_tid.hour
@@ -100,7 +108,7 @@ for slot in st.session_state.tokens:
         endring_skjedd = True
 
 if endring_skjedd:
-    lagre_data_til_fil()
+    lagre_koe_til_fil()
 
 # 4. Brukerfunksjoner: Booke tokens
 st.header("🛒 Book printertid")
@@ -116,10 +124,7 @@ with col2:
 if st.button("Sjekk tilgjengelighet og book plass"):
     if medarbeider:
         kronologisk_soke_koe = []
-        if book_for_i_morgen:
-            start_soke_time = 8
-        else:
-            start_soke_time = naa_time
+        start_soke_time = 8 if book_for_i_morgen else naa_time
 
         for i in range(24):
             sjekk_time = ((start_soke_time - 1 + i) % 24) + 1
@@ -165,10 +170,11 @@ if st.button("Sjekk tilgjengelighet og book plass"):
                 st.warning(
                     f"Du fikk booket {len(valgte_slots)} timer, men de siste {antall_avvist_pga_nattskift} timene ble avvist!")
             else:
-                st.success(f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer.")
+                st.success(
+                    f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer fra klokken {første_token['tid']}.")
 
             st.session_state.logg.insert(0, logg_melding)
-            lagre_data_til_fil()  # SPESIKT MINNE-STEG
+            lagre_koe_til_fil()
             st.rerun()
         else:
             st.error("Kunne ikke finne noen ledige timer etter hverandre.")
@@ -199,7 +205,7 @@ if st.button("Frigjør token manuelt"):
         target_token["dag"] = "i_dag"
         st.session_state.logg.insert(0, f"⚠️ Token #{token_id_valgt} frigjort av {gammel_bruker}. Årsak: {kommentar}")
         st.success(f"Token #{token_id_valgt} er frigjort!")
-        lagre_data_til_fil()  # SPESIKT MINNE-STEG
+        lagre_koe_til_fil()
         st.rerun()
     else:
         st.warning("Du må både velge et token og skrive en kommentar!")
@@ -228,8 +234,8 @@ for hendelse in st.session_state.logg[:3]:
 
 st.write("---")
 
-# 8. Feedback-seksjon
-st.header("⭐ Gi tilbakemelding på systemet")
+# 8. Feedback-seksjon (NÅ MED PERMANENT MINNE OG UTREKKBAR LISTE)
+st.header("⭐ Tilbakemeldinger på systemet")
 gjennomsnitt = sum(st.session_state.ratings) / len(st.session_state.ratings)
 st.subheader(f"Gjennomsnittlig rating: {gjennomsnitt:.1f} / 5.0 stjerner ({len(st.session_state.ratings)} stemmer)")
 
@@ -238,9 +244,22 @@ tilbakemelding_tekst = st.text_area("Kommentar (valgfri):", placeholder="Hva kan
 
 if st.button("Send tilbakemelding"):
     st.session_state.ratings.append(stjerner)
+    if tilbakemelding_tekst.strip():
+        # Lagrer kommentaren sammen med stjerner og dato
+        tidspunkt_streng = naa_tid.strftime("%d.%m %H:%M")
+        st.session_state.feedback_kommentarer.insert(0, f"[{tidspunkt_streng}] ⭐{stjerner}: {tilbakemelding_tekst}")
+
+    lagre_feedback_til_fil()
     st.success("Tusen takk for tilbakemeldingen din!")
-    lagre_data_til_fil()  # SPESIKT MINNE-STEG
     st.rerun()
+
+# Klikkbar brikke/knapp som gjemmer og viser kommentarer (st.expander)
+with st.expander("💬 Vis/gjem tekstkommentarer fra kolleger"):
+    if st.session_state.feedback_kommentarer:
+        for kommentar_linje in st.session_state.feedback_kommentarer:
+            st.write(kommentar_linje)
+    else:
+        st.write("*Ingen tekstkommentarer har kommet inn ennå. Bli den første!*")
 
 st.write("---")
 
