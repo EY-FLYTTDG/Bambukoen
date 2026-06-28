@@ -15,7 +15,7 @@ st.set_page_config(page_title="Bambulab Køsystem", page_icon="🖨️", layout=
 naa_tid = datetime.now()
 naa_tid_streng = naa_tid.strftime("%H:%M")
 
-st.title("🖨️ Bambulab køen GK
+st.title("🖨️ Bambulab køen GK")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
 # Avdelingsinfo og Husk-meldinger
