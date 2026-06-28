@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime
+import pytz
 
-# Tvinger Streamlit til å oppdatere siden automatisk hvert 10. sekund
 try:
     from streamlit_autorefresh import st_autorefresh
 
@@ -12,25 +12,22 @@ except ImportError:
 # 1. Sette opp siden
 st.set_page_config(page_title="Bambulab Køsystem", page_icon="🖨️", layout="centered")
 
-naa_tid = datetime.now()
+norsk_tidssone = pytz.timezone("Europe/Oslo")
+naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 
-st.title("🖨️ Bambulab køen for GK MEK verksted")
+st.title("🖨️ Bambulab Tillitsbasert Køsystem")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
-# Avdelingsinfo og Husk-meldinger
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
-st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg to **Automasjons Avd.**")
+st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
 
 # 2. Sette opp "State" (Dataminne)
 if "tokens" not in st.session_state:
     st.session_state.tokens = []
-    # Genererer 24 tokens strukturert etter ønske
     for i in range(1, 25):
         time_tall = i
         timer_streng = f"{time_tall:02d}:00" if time_tall < 24 else "24:00"
-
-        # KUN Token 1 til 7 er nattskift
         er_nattskift = 1 <= i <= 7
 
         st.session_state.tokens.append({
@@ -49,7 +46,7 @@ if "logg" not in st.session_state:
 if "ratings" not in st.session_state:
     st.session_state.ratings = [5, 5, 4]
 
-# 3. Automatisk frigjøring av gamle timer (KUN for brikker merket med "i_dag")
+# 3. Automatisk frigjøring av gamle timer
 naa_time = naa_tid.hour
 if naa_time == 0:
     naa_time = 24
@@ -78,9 +75,9 @@ if st.button("Sjekk tilgjengelighet og book plass"):
         kronologisk_soke_koe = []
 
         if book_for_i_morgen:
-            start_soke_time = 8  # Starter på Token 8 neste dag
+            start_soke_time = 8
         else:
-            start_soke_time = naa_time  # Starter fra nå-timen i dag
+            start_soke_time = naa_time
 
         # Lag en uavbrutt tidsrekke på 24 sammenhengende timer fremover
         for i in range(24):
@@ -88,29 +85,31 @@ if st.button("Sjekk tilgjengelighet og book plass"):
             token_obj = next(slot for slot in st.session_state.tokens if slot["time_verdi"] == sjekk_time)
             kronologisk_soke_koe.append((i, token_obj))
 
-        # Sjekk og bygg listen over tillatte timer på rad
-        valgte_slots = []
-        antall_frigjort_pga_nattskift = 0
+        # NY LOGIKK: Finn ALLE tilgjengelige og lovlige timer i rekkefølgen
+        lovlige_og_ledige = []
+        antall_avvist_pga_nattskift = 0
 
         for soke_index, slot in kronologisk_soke_koe:
-            # Stopp letingen helt hvis vi har funnet nok timer
-            if len(valgte_slots) == antall_tokens:
-                break
-
             if slot["status"] == "Ledig":
-                # KRITISK ENDRING: Hvis brikken er nattskift, og de IKKE har huket av:
-                # Da KUTTES bookingen her. De resterende timene de ba om blir "frigjort/avvist".
                 if slot["nattskift"] and not godkjent_nattskift:
-                    antall_frigjort_pga_nattskift = antall_tokens - len(valgte_slots)
-                    break  # Går rett ut av løkken, ingen flere timer tillates!
-
-                valgte_slots.append((soke_index, slot))
+                    # Hvis vi treffer nattskiftet uten avtale, lagrer vi hvor mange timer vi manglet og stopper
+                    if len(lovlige_og_ledige) > 0:
+                        antall_avvist_pga_nattskift = antall_tokens - len(lovlige_og_ledige)
+                    break
+                lovlige_og_ledige.append((soke_index, slot))
             else:
-                # Hvis en time midt i rekken allerede er booket av noen andre, må vi også stoppe (sammenhengende tid)
-                break
+                # Hvis vi allerede har begynt å samle opp en sammenhengende blokk,
+                # men treffer en opptatt time, må vi stoppe for å holde tiden sammenhengende.
+                if len(lovlige_og_ledige) > 0:
+                    break
+                # Hvis vi IKKE har funnet noen ledige timer ennå, fortsetter vi bare å lete fremover i køen!
+                continue
 
-        # Gjennomfør booking for de timene som faktisk ble godkjent
-        if len(valgte_slots) > 0:
+        # Sjekk om vi fant noen brukbare timer i det hele tatt
+        if len(lovlige_og_ledige) > 0:
+            valgte_slots = lovlige_og_ledige[:antall_tokens]
+
+            # Utfør bookingen
             for soke_index, slot in valgte_slots:
                 slot["bruker"] = medarbeider
                 slot["status"] = "Booket"
@@ -126,20 +125,21 @@ if st.button("Sjekk tilgjengelighet og book plass"):
             første_token = valgte_slots[0][1]
             siste_token = valgte_slots[-1][1]
 
-            # Loggføring og tilbakemelding
             logg_melding = f"⏱️ {medarbeider} booket {len(valgte_slots)} tokens (Kl. {første_token['tid']} til {siste_token['tid']})."
-            if antall_frigjort_pga_nattskift > 0:
-                logg_melding += f" ⚠️ {antall_frigjort_pga_nattskift} timer automatisk frigjort pga manglende nattskift-avtale."
+
+            if antall_avvist_pga_nattskift > 0:
+                logg_melding += f" ⚠️ {antall_avvist_pga_nattskift} timer automatisk frigjort pga nattskift-sperre."
                 st.warning(
-                    f"Du fikk booket {len(valgte_slots)} timer frem til nattskiftet startet, men de siste {antall_frigjort_pga_nattskift} timene ble automatisk frigjort/avvist fordi du ikke har huket av for avtale med nattskift!")
+                    f"Du fikk booket {len(valgte_slots)} timer, men de siste {antall_avvist_pga_nattskift} timene ble avvist fordi du krasjet med nattskiftet uten avtale!")
             else:
-                st.success(f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer.")
+                st.success(
+                    f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer fra klokken {første_token['tid']}.")
 
             st.session_state.logg.insert(0, logg_melding)
             st.rerun()
         else:
             st.error(
-                "Kunne ikke booke noen plasser. Enten er neste time opptatt, eller så starter nattskiftet umiddelbart og blokkerer søket ditt.")
+                "Kunne ikke finne noen ledige timer etter hverandre. Sjekk timetabellen under for å finne et ledig vindu.")
     else:
         st.warning("Du må skrive inn navnet ditt først.")
 
