@@ -19,7 +19,7 @@ naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
-st.title("🖨️ Bambulab Tillitsbasert Køsystem")
+st.title("🖨️ Bambulab print kø MEK ")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
