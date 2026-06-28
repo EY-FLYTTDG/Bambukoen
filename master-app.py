@@ -1,20 +1,23 @@
 import streamlit as st
 from datetime import datetime
 import pytz
+import json
+import os
 
 try:
     from streamlit_autorefresh import st_autorefresh
 
     st_autorefresh(interval=10000, key="daterefresh")
 except ImportError:
-    st.warning("Husk å kjøre 'pip install streamlit-autorefresh' i terminalen!")
+    st.warning("Husk 'pip install streamlit-autorefresh'")
 
-# 1. Sette opp siden
+# 1. Sette opp siden og tid
 st.set_page_config(page_title="Bambulab Køsystem", page_icon="🖨️", layout="centered")
 
 norsk_tidssone = pytz.timezone("Europe/Oslo")
 naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
+dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
 st.title("🖨️ Bambulab Tillitsbasert Køsystem")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
@@ -22,35 +25,71 @@ st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
 st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
 
-# 2. Sette opp "State" (Dataminne)
+# --- NYTT: LOGIKK FOR PERMANENT FIL-MINNE ---
+FILNAVN = "koe_data.json"
+
+
+def last_lagrede_data():
+    """Henter data fra JSON-filen hvis den eksisterer og er fra i dag."""
+    if os.path.exists(FILNAVN):
+        try:
+            with open(FILNAVN, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Sjekk om filen er fra i dag (24-timers automatisk nullstilling)
+                if data.get("dato") == dagens_dato_streng:
+                    return data
+        except Exception:
+            pass
+    return None
+
+
+def lagre_data_til_fil():
+    """Lagrer gjeldende status til JSON-filen."""
+    data_som_skal_lagres = {
+        "dato": dagens_dato_streng,
+        "tokens": st.session_state.tokens,
+        "logg": st.session_state.logg,
+        "ratings": st.session_state.ratings
+    }
+    with open(FILNAVN, "w", encoding="utf-8") as f:
+        json.dump(data_som_skal_lagres, f, ensure_ascii=False, indent=4)
+
+
+# Last inn minnet hvis det finnes
+lagret_minne = last_lagrede_data()
+
+# 2. Sette opp "State" basert på fil-minnet
 if "tokens" not in st.session_state:
-    st.session_state.tokens = []
-    for i in range(1, 25):
-        time_tall = i
-        timer_streng = f"{time_tall:02d}:00" if time_tall < 24 else "24:00"
-        er_nattskift = 1 <= i <= 7
-
-        st.session_state.tokens.append({
-            "id": i,
-            "tid": timer_streng,
-            "bruker": "Ledig",
-            "status": "Ledig",
-            "nattskift": er_nattskift,
-            "time_verdi": time_tall,
-            "dag": "i_dag"
-        })
-
-if "logg" not in st.session_state:
-    st.session_state.logg = ["Systemet startet. Alt klart for print!"]
-
-if "ratings" not in st.session_state:
-    st.session_state.ratings = [5, 5, 4]
+    if lagret_minne:
+        st.session_state.tokens = lagret_minne["tokens"]
+        st.session_state.logg = lagret_minne["logg"]
+        st.session_state.ratings = lagret_minne["ratings"]
+    else:
+        # Hvis ingen fil finnes (eller den er utdatert), lag ny blank dag
+        st.session_state.tokens = []
+        for i in range(1, 25):
+            time_tall = i
+            timer_streng = f"{time_tall:02d}:00" if time_tall < 24 else "24:00"
+            er_nattskift = 1 <= i <= 7
+            st.session_state.tokens.append({
+                "id": i,
+                "tid": timer_streng,
+                "bruker": "Ledig",
+                "status": "Ledig",
+                "nattskift": er_nattskift,
+                "time_verdi": time_tall,
+                "dag": "i_dag"
+            })
+        st.session_state.logg = ["Systemet startet. Alt klart for print!"]
+        st.session_state.ratings = [5, 5, 4]
+        lagre_data_til_fil()
 
 # 3. Automatisk frigjøring av gamle timer
 naa_time = naa_tid.hour
 if naa_time == 0:
     naa_time = 24
 
+endring_skjedd = False
 for slot in st.session_state.tokens:
     if slot["dag"] == "i_dag" and slot["time_verdi"] < naa_time and slot["status"] == "Booket":
         gammel_bruker = slot["bruker"]
@@ -58,6 +97,10 @@ for slot in st.session_state.tokens:
         slot["status"] = "Ledig"
         st.session_state.logg.insert(0,
                                      f"🤖 Automatisk frigjort: Tiden for Token #{slot['id']} ({slot['tid']}) har passert.")
+        endring_skjedd = True
+
+if endring_skjedd:
+    lagre_data_til_fil()
 
 # 4. Brukerfunksjoner: Booke tokens
 st.header("🛒 Book printertid")
@@ -73,47 +116,38 @@ with col2:
 if st.button("Sjekk tilgjengelighet og book plass"):
     if medarbeider:
         kronologisk_soke_koe = []
-
         if book_for_i_morgen:
             start_soke_time = 8
         else:
             start_soke_time = naa_time
 
-        # Lag en uavbrutt tidsrekke på 24 sammenhengende timer fremover
         for i in range(24):
             sjekk_time = ((start_soke_time - 1 + i) % 24) + 1
             token_obj = next(slot for slot in st.session_state.tokens if slot["time_verdi"] == sjekk_time)
             kronologisk_soke_koe.append((i, token_obj))
 
-        # NY LOGIKK: Finn ALLE tilgjengelige og lovlige timer i rekkefølgen
         lovlige_og_ledige = []
         antall_avvist_pga_nattskift = 0
 
         for soke_index, slot in kronologisk_soke_koe:
+            if len(lovlige_og_ledige) == antall_tokens:
+                break
             if slot["status"] == "Ledig":
                 if slot["nattskift"] and not godkjent_nattskift:
-                    # Hvis vi treffer nattskiftet uten avtale, lagrer vi hvor mange timer vi manglet og stopper
                     if len(lovlige_og_ledige) > 0:
                         antall_avvist_pga_nattskift = antall_tokens - len(lovlige_og_ledige)
                     break
                 lovlige_og_ledige.append((soke_index, slot))
             else:
-                # Hvis vi allerede har begynt å samle opp en sammenhengende blokk,
-                # men treffer en opptatt time, må vi stoppe for å holde tiden sammenhengende.
                 if len(lovlige_og_ledige) > 0:
                     break
-                # Hvis vi IKKE har funnet noen ledige timer ennå, fortsetter vi bare å lete fremover i køen!
                 continue
 
-        # Sjekk om vi fant noen brukbare timer i det hele tatt
         if len(lovlige_og_ledige) > 0:
             valgte_slots = lovlige_og_ledige[:antall_tokens]
-
-            # Utfør bookingen
             for soke_index, slot in valgte_slots:
                 slot["bruker"] = medarbeider
                 slot["status"] = "Booket"
-
                 if book_for_i_morgen:
                     slot["dag"] = "i_morgen"
                 else:
@@ -124,22 +158,20 @@ if st.button("Sjekk tilgjengelighet og book plass"):
 
             første_token = valgte_slots[0][1]
             siste_token = valgte_slots[-1][1]
-
             logg_melding = f"⏱️ {medarbeider} booket {len(valgte_slots)} tokens (Kl. {første_token['tid']} til {siste_token['tid']})."
 
             if antall_avvist_pga_nattskift > 0:
                 logg_melding += f" ⚠️ {antall_avvist_pga_nattskift} timer automatisk frigjort pga nattskift-sperre."
                 st.warning(
-                    f"Du fikk booket {len(valgte_slots)} timer, men de siste {antall_avvist_pga_nattskift} timene ble avvist fordi du krasjet med nattskiftet uten avtale!")
+                    f"Du fikk booket {len(valgte_slots)} timer, men de siste {antall_avvist_pga_nattskift} timene ble avvist!")
             else:
-                st.success(
-                    f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer fra klokken {første_token['tid']}.")
+                st.success(f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer.")
 
             st.session_state.logg.insert(0, logg_melding)
+            lagre_data_til_fil()  # SPESIKT MINNE-STEG
             st.rerun()
         else:
-            st.error(
-                "Kunne ikke finne noen ledige timer etter hverandre. Sjekk timetabellen under for å finne et ledig vindu.")
+            st.error("Kunne ikke finne noen ledige timer etter hverandre.")
     else:
         st.warning("Du må skrive inn navnet ditt først.")
 
@@ -167,6 +199,7 @@ if st.button("Frigjør token manuelt"):
         target_token["dag"] = "i_dag"
         st.session_state.logg.insert(0, f"⚠️ Token #{token_id_valgt} frigjort av {gammel_bruker}. Årsak: {kommentar}")
         st.success(f"Token #{token_id_valgt} er frigjort!")
+        lagre_data_til_fil()  # SPESIKT MINNE-STEG
         st.rerun()
     else:
         st.warning("Du må både velge et token og skrive en kommentar!")
@@ -206,6 +239,7 @@ tilbakemelding_tekst = st.text_area("Kommentar (valgfri):", placeholder="Hva kan
 if st.button("Send tilbakemelding"):
     st.session_state.ratings.append(stjerner)
     st.success("Tusen takk for tilbakemeldingen din!")
+    lagre_data_til_fil()  # SPESIKT MINNE-STEG
     st.rerun()
 
 st.write("---")
