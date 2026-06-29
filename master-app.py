@@ -1,9 +1,12 @@
+import os
+import json
+import pytz
 import streamlit as st
 from datetime import datetime
-import pytz
-import json
-import os
 
+# ==========================================
+# 1. IMPORTS & SIDEOPPSETT
+# ==========================================
 try:
     from streamlit_autorefresh import st_autorefresh
 
@@ -11,32 +14,30 @@ try:
 except ImportError:
     st.warning("Husk 'pip install streamlit-autorefresh'")
 
-# 1. Sette opp siden og tid
 st.set_page_config(page_title="Bambulab Køsystem", page_icon="🖨️", layout="centered")
+
+# ==========================================
+# 2. KONSTANTER & TIDSSONE
+# ==========================================
+FILNAVN_KOE = "koe_data.json"
+FILNAVN_FEEDBACK = "feedback_data.json"
+FILNAVN_SCOREBOARD = "scoreboard_data.json"
 
 norsk_tidssone = pytz.timezone("Europe/Oslo")
 naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
-st.title("🖨️ Bambulab MEK Print kø")
-st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
-
-st.info(
-    "💡 **HUSK:** ta med deg fysiske tokens når du booker print tid og Legg fra deg de ved printeren med en gang printen din starter!")
-st.info("print tid for morgendagen blir frigitt 24Timer i forkant")
-st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
-
-# --- PARAMETERE FOR FIL-MINNE ---
-FILNAVN_KOE = "koe_data.json"
-FILNAVN_FEEDBACK = "feedback_data.json"
-FILNAVN_SCOREBOARD = "scoreboard_data.json"
-
+# Globale tilstander for skjulte funksjoner
 if "vis_secret_board" not in st.session_state:
     st.session_state.vis_secret_board = False
 
 
+# ==========================================
+# 3. HJELPEFUNKSJONER (DATA & FILHÅNDTERING)
+# ==========================================
 def initialiser_blank_koe():
+    """Lager en helt tom dagsplan med 24 timer."""
     ny_koe = []
     for i in range(1, 24 + 1):
         timer_streng = f"{i:02d}:00" if i < 24 else "24:00"
@@ -54,11 +55,13 @@ def initialiser_blank_koe():
 
 
 def last_lagrede_data():
+    """Henter kø-data fra fil og ruller over 'i morgen'-bookingene ved ny dag."""
     if os.path.exists(FILNAVN_KOE):
         try:
             with open(FILNAVN_KOE, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            # Sjekk om det har blitt en ny dag siden sist
             if data.get("dato") != dagens_dato_streng:
                 gamle_tokens = data.get("tokens", [])
                 oppdaterte_tokens = initialiser_blank_koe()
@@ -84,6 +87,7 @@ def last_lagrede_data():
 
 
 def last_feedback_data():
+    """Henter stjerner og kommentarer."""
     if os.path.exists(FILNAVN_FEEDBACK):
         try:
             with open(FILNAVN_FEEDBACK, "r", encoding="utf-8") as f:
@@ -94,6 +98,7 @@ def last_feedback_data():
 
 
 def last_scoreboard_data():
+    """Henter statistikk over fullførte timer."""
     if os.path.exists(FILNAVN_SCOREBOARD):
         try:
             with open(FILNAVN_SCOREBOARD, "r", encoding="utf-8") as f:
@@ -104,18 +109,21 @@ def last_scoreboard_data():
 
 
 def lagre_koe_til_fil():
+    """Lagrer gjeldende kø til fil."""
     with open(FILNAVN_KOE, "w", encoding="utf-8") as f:
         json.dump({"dato": dagens_dato_streng, "tokens": st.session_state.tokens, "logg": st.session_state.logg}, f,
                   ensure_ascii=False, indent=4)
 
 
 def lagre_feedback_til_fil():
+    """Lagrer feedback til fil."""
     with open(FILNAVN_FEEDBACK, "w", encoding="utf-8") as f:
         json.dump({"ratings": st.session_state.ratings, "kommentarer": st.session_state.feedback_kommentarer}, f,
                   ensure_ascii=False, indent=4)
 
 
 def oppdater_og_lagre_scoreboard(navn, score):
+    """Registrerer fullførte timer på en person i scoreboardet."""
     gjeldende_scoreboard = last_scoreboard_data()
     vasket_navn = navn.strip().capitalize()
 
@@ -129,7 +137,9 @@ def oppdater_og_lagre_scoreboard(navn, score):
     st.session_state.scoreboard = gjeldende_scoreboard
 
 
-# Last inn minner
+# ==========================================
+# 4. INITIALISERING AV STATE (MINNE)
+# ==========================================
 lagret_koe = last_lagrede_data()
 lagret_feedback = last_feedback_data()
 
@@ -149,7 +159,9 @@ if "ratings" not in st.session_state:
 if "scoreboard" not in st.session_state:
     st.session_state.scoreboard = last_scoreboard_data()
 
-# 3. Automatisk frigjøring av gamle timer
+# ==========================================
+# 5. BAKGRUNNS-ROBOTER (AUTOMATISKE SJEKKER)
+# ==========================================
 naa_time = naa_tid.hour
 if naa_time == 0:
     naa_time = 24
@@ -163,17 +175,33 @@ for slot in st.session_state.tokens:
         st.session_state.logg.insert(0,
                                      f"🤖 Automatisk frigjort: Tiden for Token #{slot['id']} ({slot['tid']}) har passert.")
 
-        # Poeng registreres KUN her når timen passerer automatisk
+        # Registrer poeng for fullført time
         oppdater_og_lagre_scoreboard(gammel_bruker, 1)
         endring_skjedd = True
 
 if endring_skjedd:
     lagre_koe_til_fil()
 
-# 4. Brukerfunksjoner: Booke tokens (NÅ PAKKET INN I ET TRYGT FORM)
-st.header("🛒 Book printertid")
+# ==========================================
+# 6. BRUKERGRENSESNITT (UI) & SKJEMAER
+# ==========================================
 
-# clear_on_submit tømmer skjemaet AUTOMATISK i skyen/lokalt uten å krasje session_state!
+# --- Topptekst & Info ---
+st.title("🖨️ Bambulab MEK Print kø")
+st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
+
+st.info(
+    "💡 **HUSK:** ta med deg fysiske tokens når du booker print tid og Legg fra deg de ved printeren med en gang printen din starter!")
+st.info("print tid for morgendagen blir frigitt 24Timer i forkant")
+st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
+
+# --- Toast-meldinger fra forrige kjøring ---
+if "toast_melding" in st.session_state:
+    st.toast(st.session_state["toast_melding"])
+    del st.session_state["toast_melding"]
+
+# --- Seksjon A: Booke tokens ---
+st.header("🛒 Book printertid")
 with st.form(key="booking_form", clear_on_submit=True):
     medarbeider = st.text_input("Ditt navn:", placeholder="f.eks. Thomas")
     antall_tokens = st.number_input("Hvor mange timer/tokens trenger du?", min_value=1, max_value=24, value=1)
@@ -188,7 +216,7 @@ with st.form(key="booking_form", clear_on_submit=True):
 
 if submit_booking:
     if medarbeider:
-        # --- SJEKK ETTER HEMMELIG PASSORD ---
+        # Sjekk etter det hemmelige kodeordet (Endret av bruker til AUT-ADMIN)
         if medarbeider.strip() == "AUT-ADMIN":
             st.session_state.vis_secret_board = not st.session_state.vis_secret_board
             st.rerun()
@@ -253,11 +281,7 @@ if submit_booking:
     else:
         st.warning("Du må skrive inn navnet ditt først.")
 
-if "toast_melding" in st.session_state:
-    st.toast(st.session_state["toast_melding"])
-    del st.session_state["toast_melding"]
-
-# 5. Brukerfunksjoner: Justere/Frigjøre tid manuelt (OGSÅ PAKKET INN I ET FORM)
+# --- Seksjon B: Manuell frigjøring ---
 st.header("🔧 Endre pågående print")
 
 avbestillings_valg = ["-- Velg et token --"]
@@ -292,7 +316,7 @@ if submit_rydding:
     else:
         st.warning("Du må fylle ut ALL info: Velg et token, skriv hvem du er, og oppgi en årsak!")
 
-# 6. Visning av rutetabellen / Timelisten
+# --- Seksjon C: Rutetabell-visning ---
 st.header("📅 Dagens Timetabell (24 Timer)")
 
 for slot in st.session_state.tokens:
@@ -309,7 +333,7 @@ for slot in st.session_state.tokens:
 
     st.text(f"{status_ikon} Token #{slot['id']:02d} | Kl. {slot['tid']} {tilleggs_tekst}")
 
-# 7. Hendelseslogg
+# --- Seksjon D: Hendelseslogg ---
 st.header("📋 Siste hendelser")
 for hendelse in st.session_state.logg[:3]:
     st.caption(hendelse)
@@ -323,7 +347,7 @@ with st.expander("🔍 Vis utvidet logg (Opptil 30 hendelser i dag)"):
 
 st.write("---")
 
-# 8. Feedback-seksjon (OGSÅ PAKKET INN I ET FORM)
+# --- Seksjon E: Feedback ---
 st.header("⭐ Tilbakemeldinger på systemet")
 gjennomsnitt = sum(st.session_state.ratings) / len(st.session_state.ratings)
 st.subheader(f"Gjennomsnittlig rating: {gjennomsnitt:.1f} / 5.0 stjerner ({len(st.session_state.ratings)} stemmer)")
@@ -352,10 +376,10 @@ with st.expander("💬 Vis/gjem tekstkommentarer fra kolleger"):
 
 st.write("---")
 
-# 9. Signatur
+# --- Seksjon F: Signatur ---
 st.markdown("<center><h4>Vibbet av EY-FLYTTDG 🪂 🤙</h4></center>", unsafe_allow_html=True)
 
-# --- 🛠️ DET SUPER-HEMMELIGE PASSORD-SCOREBOARDET ---
+# --- Seksjon G: Det hemmelige scoreboardet ---
 if st.session_state.vis_secret_board:
     st.write("---")
     st.subheader("🏆 Det Hemmelige Scoreboardet (Kun fullførte print-timer)")
