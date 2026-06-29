@@ -189,7 +189,7 @@ with st.form(key="booking_form", clear_on_submit=True):
 if submit_booking:
     if medarbeider:
         # --- SJEKK ETTER HEMMELIG PASSORD ---
-        if medarbeider.strip() == "Mek-admin":
+        if medarbeider.strip() == "AUT-ADMIN":
             st.session_state.vis_secret_board = not st.session_state.vis_secret_board
             st.rerun()
 
