@@ -353,7 +353,7 @@ with st.expander("💬 Vis/gjem tekstkommentarer fra kolleger"):
 st.write("---")
 
 # 9. Signatur
-st.markdown("<center><h4>Vibet av EY-FLYTTDG 🤘</h4></center>", unsafe_allow_html=True)
+st.markdown("<center><h4>Vibbet av EY-FLYTTDG 🪂 🤙</h4></center>", unsafe_allow_html=True)
 
 # --- 🛠️ DET SUPER-HEMMELIGE PASSORD-SCOREBOARDET ---
 if st.session_state.vis_secret_board:
