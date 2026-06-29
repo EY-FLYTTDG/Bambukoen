@@ -19,39 +19,78 @@ naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
-st.title("🖨️ Bambulab MEK print kø ")
+st.title("🖨️ Bambulab MEK print kø")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
 st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
 
-# --- TO SEPARATE FILER FOR MINNE ---
+# --- PARAMETERE FOR FIL-MINNE ---
 FILNAVN_KOE = "koe_data.json"
-FILNAVN_FEEDBACK = "feedback_data.json"  # NY: Lagres evig (nullstilles IKKE ved midnatt)
+FILNAVN_FEEDBACK = "feedback_data.json"
+
+
+def initialiser_blank_koe():
+    """Lager en helt tom dagsplan."""
+    ny_koe = []
+    for i in range(1, 24 + 1):
+        timer_streng = f"{i:02d}:00" if i < 24 else "24:00"
+        er_nattskift = 1 <= i <= 7
+        ny_koe.append({
+            "id": i,
+            "tid": timer_streng,
+            "bruker": "Ledig",
+            "status": "Ledig",
+            "nattskift": er_nattskift,
+            "time_verdi": i,
+            "dag": "i_dag"
+        })
+    return ny_koe
 
 
 def last_lagrede_data():
-    """Henter kø-data hvis filen er fra i dag."""
+    """Henter kø-data og ruller over 'i morgen'-bookingene hvis det er ny dag."""
     if os.path.exists(FILNAVN_KOE):
         try:
             with open(FILNAVN_KOE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if data.get("dato") == dagens_dato_streng:
-                    return data
+
+            # HVIS DET ER EN NY DAG: Flytt morgendagens kø over til i dag!
+            if data.get("dato") != dagens_dato_streng:
+                gamle_tokens = data.get("tokens", [])
+                oppdaterte_tokens = initialiser_blank_koe()
+
+                for gammel_slot in gamle_tokens:
+                    # Hvis en time var booket for "i morgen", blir den nå til "i dag"
+                    if gammel_slot.get("dag") == "i_morgen" and gammel_slot.get("status") == "Booket":
+                        matchende_ny_slot = next(s for s in oppdaterte_tokens if s["id"] == gammel_slot["id"])
+                        matchende_ny_slot["bruker"] = gammel_slot["bruker"]
+                        matchende_ny_slot["status"] = "Booket"
+                        matchende_ny_slot["dag"] = "i_dag"  # Nå er det blitt i dag!
+
+                # Lagre den nye oppdaterte planen med en gang
+                with open(FILNAVN_KOE, "w", encoding="utf-8") as f:
+                    json.dump({"dato": dagens_dato_streng, "tokens": oppdaterte_tokens,
+                               "logg": ["📅 Ny dag! 'I morgen'-køen er flyttet over til i dag."]}, f, ensure_ascii=False,
+                              indent=4)
+                return {"dato": dagens_dato_streng, "tokens": oppdaterte_tokens,
+                        "logg": ["📅 Ny dag! 'I morgen'-køen er flyttet over til i dag."]}
+
+            return data
         except Exception:
             pass
     return None
 
 
 def last_feedback_data():
-    """Henter all feedback som noen gang er sendt inn."""
+    """Henter all feedback. Nullstilles ALDRI av dato-endringer."""
     if os.path.exists(FILNAVN_FEEDBACK):
         try:
             with open(FILNAVN_FEEDBACK, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
-    return {"ratings": [5, 5, 4], "kommentarer": []}  # Start-verdier hvis filen er tom
+    return {"ratings": [5, 5, 4], "kommentarer": []}
 
 
 def lagre_koe_til_fil():
@@ -66,25 +105,17 @@ def lagre_feedback_til_fil():
                   ensure_ascii=False, indent=4)
 
 
-# Last inn minner
+# Last inn minner stabilt
 lagret_koe = last_lagrede_data()
 lagret_feedback = last_feedback_data()
 
-# Sette opp session_state ut fra filene
+# Sette opp session_state stabilt
 if "tokens" not in st.session_state:
     if lagret_koe:
         st.session_state.tokens = lagret_koe["tokens"]
         st.session_state.logg = lagret_koe["logg"]
     else:
-        st.session_state.tokens = []
-        for i in range(1, 25):
-            time_tall = i
-            timer_streng = f"{time_tall:02d}:00" if time_tall < 24 else "24:00"
-            er_nattskift = 1 <= i <= 7
-            st.session_state.tokens.append({
-                "id": i, "tid": timer_streng, "bruker": "Ledig", "status": "Ledig", "nattskift": er_nattskift,
-                "time_verdi": time_tall, "dag": "i_dag"
-            })
+        st.session_state.tokens = initialiser_blank_koe()
         st.session_state.logg = ["Systemet startet. Alt klart for print!"]
         lagre_koe_til_fil()
 
@@ -92,7 +123,7 @@ if "ratings" not in st.session_state:
     st.session_state.ratings = lagret_feedback["ratings"]
     st.session_state.feedback_kommentarer = lagret_feedback["kommentarer"]
 
-# 3. Automatisk frigjøring av gamle timer
+# 3. Automatisk frigjøring av gamle timer (Kun for i_dag)
 naa_time = naa_tid.hour
 if naa_time == 0:
     naa_time = 24
@@ -170,8 +201,7 @@ if st.button("Sjekk tilgjengelighet og book plass"):
                 st.warning(
                     f"Du fikk booket {len(valgte_slots)} timer, men de siste {antall_avvist_pga_nattskift} timene ble avvist!")
             else:
-                st.success(
-                    f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer fra klokken {første_token['tid']}.")
+                st.success(f"Suksess! Du har booket {len(valgte_slots)} sammenhengende timer.")
 
             st.session_state.logg.insert(0, logg_melding)
             lagre_koe_til_fil()
@@ -234,7 +264,7 @@ for hendelse in st.session_state.logg[:3]:
 
 st.write("---")
 
-# 8. Feedback-seksjon (NÅ MED PERMANENT MINNE OG UTREKKBAR LISTE)
+# 8. Feedback-seksjon
 st.header("⭐ Tilbakemeldinger på systemet")
 gjennomsnitt = sum(st.session_state.ratings) / len(st.session_state.ratings)
 st.subheader(f"Gjennomsnittlig rating: {gjennomsnitt:.1f} / 5.0 stjerner ({len(st.session_state.ratings)} stemmer)")
@@ -245,7 +275,6 @@ tilbakemelding_tekst = st.text_area("Kommentar (valgfri):", placeholder="Hva kan
 if st.button("Send tilbakemelding"):
     st.session_state.ratings.append(stjerner)
     if tilbakemelding_tekst.strip():
-        # Lagrer kommentaren sammen med stjerner og dato
         tidspunkt_streng = naa_tid.strftime("%d.%m %H:%M")
         st.session_state.feedback_kommentarer.insert(0, f"[{tidspunkt_streng}] ⭐{stjerner}: {tilbakemelding_tekst}")
 
@@ -253,7 +282,6 @@ if st.button("Send tilbakemelding"):
     st.success("Tusen takk for tilbakemeldingen din!")
     st.rerun()
 
-# Klikkbar brikke/knapp som gjemmer og viser kommentarer (st.expander)
 with st.expander("💬 Vis/gjem tekstkommentarer fra kolleger"):
     if st.session_state.feedback_kommentarer:
         for kommentar_linje in st.session_state.feedback_kommentarer:
