@@ -216,7 +216,26 @@ with st.form(key="booking_form", clear_on_submit=True):
 
 if submit_booking:
     if medarbeider:
-        # Sjekk etter det hemmelige kodeordet (Endret av bruker til AUT-ADMIN)
+        # --- 1. SVENSKEKNAPPEN (MILD: SLETTER KUN KØEN) ---
+        if medarbeider.strip() == "AUT-ADMIN-Svenskeknappen":
+            if os.path.exists(FILNAVN_KOE):
+                os.remove(FILNAVN_KOE)
+            if "tokens" in st.session_state:
+                del st.session_state["tokens"]
+            st.toast("🚨 SVENSKEKNAPPEN: Timeplanen er nullstilt! Historikk og scoreboard overlevde.")
+            st.rerun()
+
+        # --- 2. SVENSKEKNAPPEN X (BRUTAL: FABRIKKINNSTILLING AV ALT) ---
+        if medarbeider.strip() == "AUT-ADMIN-SvenskeknappenX":
+            for fil in [FILNAVN_KOE, FILNAVN_FEEDBACK, FILNAVN_SCOREBOARD]:
+                if os.path.exists(fil):
+                    os.remove(fil)
+            for nokkel in list(st.session_state.keys()):
+                del st.session_state[nokkel]
+            st.toast("💥 SVENSKEKNAPPEN X: Full fabrikkinnstilling! Alt er slettet.")
+            st.rerun()
+
+        # Sjekk etter det hemmelige scoreboardet (AUT-ADMIN)
         if medarbeider.strip() == "AUT-ADMIN":
             st.session_state.vis_secret_board = not st.session_state.vis_secret_board
             st.rerun()
