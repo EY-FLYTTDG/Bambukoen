@@ -19,7 +19,7 @@ naa_tid = datetime.now(norsk_tidssone)
 naa_tid_streng = naa_tid.strftime("%H:%M")
 dagens_dato_streng = naa_tid.strftime("%Y-%m-%d")
 
-st.title("🖨️ Bambulab MEK print kø")
+st.title("🖨️ Bambulab MEK Print kø")
 st.subheader(f"🕒 Gjeldende klokkeslett: {naa_tid_streng}")
 
 st.info("💡 **HUSK:** Legg fra deg de fysiske tokens ved printeren med en gang printen din starter!")
@@ -31,7 +31,6 @@ FILNAVN_FEEDBACK = "feedback_data.json"
 
 
 def initialiser_blank_koe():
-    """Lager en helt tom dagsplan."""
     ny_koe = []
     for i in range(1, 24 + 1):
         timer_streng = f"{i:02d}:00" if i < 24 else "24:00"
@@ -49,26 +48,22 @@ def initialiser_blank_koe():
 
 
 def last_lagrede_data():
-    """Henter kø-data og ruller over 'i morgen'-bookingene hvis det er ny dag."""
     if os.path.exists(FILNAVN_KOE):
         try:
             with open(FILNAVN_KOE, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # HVIS DET ER EN NY DAG: Flytt morgendagens kø over til i dag!
             if data.get("dato") != dagens_dato_streng:
                 gamle_tokens = data.get("tokens", [])
                 oppdaterte_tokens = initialiser_blank_koe()
 
                 for gammel_slot in gamle_tokens:
-                    # Hvis en time var booket for "i morgen", blir den nå til "i dag"
                     if gammel_slot.get("dag") == "i_morgen" and gammel_slot.get("status") == "Booket":
                         matchende_ny_slot = next(s for s in oppdaterte_tokens if s["id"] == gammel_slot["id"])
                         matchende_ny_slot["bruker"] = gammel_slot["bruker"]
                         matchende_ny_slot["status"] = "Booket"
-                        matchende_ny_slot["dag"] = "i_dag"  # Nå er det blitt i dag!
+                        matchende_ny_slot["dag"] = "i_dag"
 
-                # Lagre den nye oppdaterte planen med en gang
                 with open(FILNAVN_KOE, "w", encoding="utf-8") as f:
                     json.dump({"dato": dagens_dato_streng, "tokens": oppdaterte_tokens,
                                "logg": ["📅 Ny dag! 'I morgen'-køen er flyttet over til i dag."]}, f, ensure_ascii=False,
@@ -83,7 +78,6 @@ def last_lagrede_data():
 
 
 def last_feedback_data():
-    """Henter all feedback. Nullstilles ALDRI av dato-endringer."""
     if os.path.exists(FILNAVN_FEEDBACK):
         try:
             with open(FILNAVN_FEEDBACK, "r", encoding="utf-8") as f:
@@ -105,11 +99,10 @@ def lagre_feedback_til_fil():
                   ensure_ascii=False, indent=4)
 
 
-# Last inn minner stabilt
+# Last inn minner
 lagret_koe = last_lagrede_data()
 lagret_feedback = last_feedback_data()
 
-# Sette opp session_state stabilt
 if "tokens" not in st.session_state:
     if lagret_koe:
         st.session_state.tokens = lagret_koe["tokens"]
@@ -123,7 +116,7 @@ if "ratings" not in st.session_state:
     st.session_state.ratings = lagret_feedback["ratings"]
     st.session_state.feedback_kommentarer = lagret_feedback["kommentarer"]
 
-# 3. Automatisk frigjøring av gamle timer (Kun for i_dag)
+# 3. Automatisk frigjøring av gamle timer
 naa_time = naa_tid.hour
 if naa_time == 0:
     naa_time = 24
@@ -194,7 +187,10 @@ if st.button("Sjekk tilgjengelighet og book plass"):
 
             første_token = valgte_slots[0][1]
             siste_token = valgte_slots[-1][1]
-            logg_melding = f"⏱️ {medarbeider} booket {len(valgte_slots)} tokens (Kl. {første_token['tid']} til {siste_token['tid']})."
+
+            # Legger på et lite norsk klokkeslett for når selve endringen ble utført
+            naa_endring_tid = datetime.now(norsk_tidssone).strftime("%H:%M")
+            logg_melding = f"[{naa_endring_tid}] ⏱️ {medarbeider} booket {len(valgte_slots)} tokens (Kl. {første_token['tid']} til {siste_token['tid']})."
 
             if antall_avvist_pga_nattskift > 0:
                 logg_melding += f" ⚠️ {antall_avvist_pga_nattskift} timer automatisk frigjort pga nattskift-sperre."
@@ -233,7 +229,10 @@ if st.button("Frigjør token manuelt"):
         target_token["bruker"] = "Ledig"
         target_token["status"] = "Ledig"
         target_token["dag"] = "i_dag"
-        st.session_state.logg.insert(0, f"⚠️ Token #{token_id_valgt} frigjort av {gammel_bruker}. Årsak: {kommentar}")
+
+        naa_endring_tid = datetime.now(norsk_tidssone).strftime("%H:%M")
+        st.session_state.logg.insert(0,
+                                     f"[{naa_endring_tid}] ⚠️ Token #{token_id_valgt} frigjort av {gammel_bruker}. Årsak: {kommentar}")
         st.success(f"Token #{token_id_valgt} er frigjort!")
         lagre_koe_til_fil()
         st.rerun()
@@ -257,10 +256,18 @@ for slot in st.session_state.tokens:
 
     st.text(f"{status_ikon} Token #{slot['id']:02d} | Kl. {slot['tid']} {tilleggs_tekst}")
 
-# 7. Hendelseslogg
+# 7. Hendelseslogg (NÅ MED UTREKKBAR FANE FOR 30 LINJER)
 st.header("📋 Siste hendelser")
 for hendelse in st.session_state.logg[:3]:
     st.caption(hendelse)
+
+# NY FANE: Her kan folk rulle ut for å se opptil 30 endringer i dag (Punkt 1)
+with st.expander("🔍 Vis utvidet logg (Opptil 30 hendelser i dag)"):
+    if len(st.session_state.logg) > 0:
+        for hendelse in st.session_state.logg[:30]:
+            st.write(hendelse)
+    else:
+        st.write("*Ingen hendelser loggført ennå.*")
 
 st.write("---")
 
