@@ -252,17 +252,27 @@ if submit_booking:
         antall_avvist_pga_nattskift = 0
 
         for soke_index, slot in kronologisk_soke_koe:
+            # SJEKK 1: Har vi allerede samlet opp nok sammenhengende timer?
             if len(lovlige_og_ledige) == antall_tokens:
                 break
+
             if slot["status"] == "Ledig":
                 if slot["nattskift"] and not godkjent_nattskift:
                     if len(lovlige_og_ledige) > 0:
                         antall_avvist_pga_nattskift = antall_tokens - len(lovlige_og_ledige)
-                    break
+                    break  # Nattskiftsperren skal fortsatt avbryte
+
+                # Legg til timen i den påbegynte rekken vår
                 lovlige_og_ledige.append((soke_index, slot))
             else:
-                if len(lovlige_og_ledige) > 0:
+                # SJEKK 2: Hvis vi treffer en OPPTATT time, men allerede hadde funnet nok timer,
+                # så stopper vi søket med suksess i stedet for å krasje!
+                if len(lovlige_og_ledige) == antall_tokens:
                     break
+
+                # Hvis vi ikke har nok timer ennå, må vi tømme listen og starte
+                # på nytt fordi timene må være sammenhengende.
+                lovlige_og_ledige = []
                 continue
 
         if len(lovlige_og_ledige) > 0:
