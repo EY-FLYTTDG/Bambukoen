@@ -244,15 +244,10 @@ if submit_booking:
         # Hvis man booker for i morgen, starter vi på Token 8 (08:00)
         start_soke_time = 8 if book_for_i_morgen else naa_time
 
-        # Bygg søkekøen basert på riktig dag-merking
+        # Bygg søkekøen RENT, uten å overskrive data!
         for i in range(24):
             sjekk_time = ((start_soke_time - 1 + i) % 24) + 1
             token_obj = next(slot for slot in st.session_state.tokens if slot["time_verdi"] == sjekk_time)
-
-            # Viktig fiks: Sørg for at søket leter på riktig merket dag!
-            if book_for_i_morgen:
-                token_obj["dag"] = "i_morgen"
-
             kronologisk_soke_koe.append((i, token_obj))
 
         lovlige_og_ledige = []
