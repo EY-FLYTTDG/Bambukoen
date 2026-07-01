@@ -169,7 +169,7 @@ if naa_time == 0:
 endring_skjedd = False
 for slot in st.session_state.tokens:
     # Kun frigjør hvis timen faktisk tilhører "i_dag" og tidsverdien er eldre enn gjeldende time
-    if slot["dag"] == "i_day" and slot["time_verdi"] < naa_time and slot["status"] == "Booket":
+    if slot["dag"] == "i_dag" and slot["time_verdi"] < naa_time and slot["status"] == "Booket":
         gammel_bruker = slot["bruker"]
         slot["bruker"] = "Ledig"
         slot["status"] = "Ledig"
