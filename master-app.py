@@ -168,12 +168,12 @@ if naa_time == 0:
 
 endring_skjedd = False
 for slot in st.session_state.tokens:
-    if slot["dag"] == "i_dag" and slot["time_verdi"] < naa_time and slot["status"] == "Booket":
+    # Kun frigjør hvis timen faktisk tilhører "i_dag" og tidsverdien er eldre enn gjeldende time
+    if slot["dag"] == "i_day" and slot["time_verdi"] < naa_time and slot["status"] == "Booket":
         gammel_bruker = slot["bruker"]
         slot["bruker"] = "Ledig"
         slot["status"] = "Ledig"
-        st.session_state.logg.insert(0,
-                                     f"🤖 Automatisk frigjort: Tiden for Token #{slot['id']} ({slot['tid']}) har passert.")
+        st.session_state.logg.insert(0, f"🤖 Automatisk frigjort: Tiden for Token #{slot['id']} ({slot['tid']}) har passert.")
 
         # Registrer poeng for fullført time
         oppdater_og_lagre_scoreboard(gammel_bruker, 1)
@@ -241,11 +241,18 @@ if submit_booking:
             st.rerun()
 
         kronologisk_soke_koe = []
+        # Hvis man booker for i morgen, starter vi på Token 8 (08:00)
         start_soke_time = 8 if book_for_i_morgen else naa_time
 
+        # Bygg søkekøen basert på riktig dag-merking
         for i in range(24):
             sjekk_time = ((start_soke_time - 1 + i) % 24) + 1
             token_obj = next(slot for slot in st.session_state.tokens if slot["time_verdi"] == sjekk_time)
+
+            # Viktig fiks: Sørg for at søket leter på riktig merket dag!
+            if book_for_i_morgen:
+                token_obj["dag"] = "i_morgen"
+
             kronologisk_soke_koe.append((i, token_obj))
 
         lovlige_og_ledige = []
