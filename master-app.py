@@ -22,6 +22,7 @@ st.set_page_config(page_title="Bambulab Køsystem", page_icon="🖨️", layout=
 FILNAVN_KOE = "koe_data.json"
 FILNAVN_FEEDBACK = "feedback_data.json"
 FILNAVN_SCOREBOARD = "scoreboard_data.json"
+FILNAVN_ADMIN = "admin_data.json"
 
 norsk_tidssone = pytz.timezone("Europe/Oslo")
 naa_tid = datetime.now(norsk_tidssone)
@@ -136,7 +137,20 @@ def oppdater_og_lagre_scoreboard(navn, score):
         json.dump(gjeldende_scoreboard, f, ensure_ascii=False, indent=4)
     st.session_state.scoreboard = gjeldende_scoreboard
 
+def last_admin_data():
+    """Henter administrator-melding hvis den finnes."""
+    if os.path.exists(FILNAVN_ADMIN):
+        try:
+            with open(FILNAVN_ADMIN, "r", encoding="utf-8") as f:
+                return json.load(f).get("beskjed", "")
+        except Exception:
+            pass
+    return ""
 
+def lagre_admin_data(beskjed):
+    """Lagrer administrator-melding permanent."""
+    with open(FILNAVN_ADMIN, "w", encoding="utf-8") as f:
+        json.dump({"beskjed": beskjed}, f, ensure_ascii=False)
 # ==========================================
 # 4. INITIALISERING AV STATE (MINNE)
 # ==========================================
@@ -158,6 +172,12 @@ if "ratings" not in st.session_state:
 
 if "scoreboard" not in st.session_state:
     st.session_state.scoreboard = last_scoreboard_data()
+
+if "admin_beskjed" not in st.session_state:
+    st.session_state.admin_beskjed = last_admin_data()
+
+if "vis_admin_skjema" not in st.session_state:
+    st.session_state.vis_admin_skjema = False
 
 # ==========================================
 # 5. BAKGRUNNS-ROBOTER (AUTOMATISKE SJEKKER)
@@ -194,6 +214,11 @@ st.info(
     "💡 **HUSK:** ta med deg fysiske tokens når du booker print tid og Legg fra deg de ved printeren med en gang printen din starter!")
 st.info("print tid for morgendagen blir frigitt 24Timer i forkant")
 st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
+st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
+
+# --- NYTT: ADMIN BANNER ---
+if st.session_state.admin_beskjed:
+    st.warning(f"**Melding fra system administrator:** {st.session_state.admin_beskjed}")
 
 # --- Toast-meldinger fra forrige kjøring ---
 if "toast_melding" in st.session_state:
@@ -213,7 +238,20 @@ with st.form(key="booking_form", clear_on_submit=True):
         book_for_i_morgen = st.checkbox("📅 Book for i morgen (fra Token 8 / 08:00)")
 
     submit_booking = st.form_submit_button("book print tid")
+# --- Skjult skjema for å skrive admin-beskjed ---
+if st.session_state.vis_admin_skjema:
+    with st.form(key="admin_beskjed_form", clear_on_submit=True):
+        st.subheader("🛠️ Skriv ny administrator-melding")
+        ny_beskjed = st.text_area(
+            "Meldingen vises i et gult banner på toppen. (La feltet stå helt tomt og lagre for å fjerne banneret):",
+            value=st.session_state.admin_beskjed)
 
+        if st.form_submit_button("Lagre melding og publiser"):
+            st.session_state.admin_beskjed = ny_beskjed
+            lagre_admin_data(ny_beskjed)
+            st.session_state.vis_admin_skjema = False  # Skjuler skjemaet igjen
+            st.toast("✅ Admin-melding oppdatert på tvers av plattformen!")
+            st.rerun()
 if submit_booking:
     if medarbeider:
         # --- 1. SVENSKEKNAPPEN (MILD: SLETTER KUN KØEN) ---
@@ -234,6 +272,11 @@ if submit_booking:
                 del st.session_state[nokkel]
             st.toast("💥 SVENSKEKNAPPEN X: Full fabrikkinnstilling! Alt er slettet.")
             st.rerun()
+
+            # --- 3. ADMIN BESKJED (Skjult meny) ---
+            if medarbeider.strip() == "AUT-ADMIN-beskjed":
+                st.session_state.vis_admin_skjema = not st.session_state.vis_admin_skjema
+                st.rerun()
 
         # Sjekk etter det hemmelige scoreboardet (AUT-ADMIN)
         if medarbeider.strip() == "AUT-ADMIN":
