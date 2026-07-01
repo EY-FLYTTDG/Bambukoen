@@ -273,7 +273,7 @@ if submit_booking:
             st.rerun()
 
             # --- 3. ADMIN BESKJED (Skjult meny) ---
-            if medarbeider.strip() == "AUT-ADMIN-beskjed":
+        if medarbeider.strip() == "AUT-ADMIN-beskjed":
                 st.session_state.vis_admin_skjema = not st.session_state.vis_admin_skjema
                 st.rerun()
 
