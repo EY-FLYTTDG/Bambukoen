@@ -217,7 +217,7 @@ st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse de
 
 # --- NYTT: ADMIN BANNER ---
 if st.session_state.admin_beskjed:
-    st.warning(f"**Melding fra system administrator:** {st.session_state.admin_beskjed}")
+    st.warning(f"**Drifts status:** {st.session_state.admin_beskjed}")
 
 # --- Toast-meldinger fra forrige kjøring ---
 if "toast_melding" in st.session_state:
