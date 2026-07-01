@@ -214,7 +214,6 @@ st.info(
     "💡 **HUSK:** ta med deg fysiske tokens når du booker print tid og Legg fra deg de ved printeren med en gang printen din starter!")
 st.info("print tid for morgendagen blir frigitt 24Timer i forkant")
 st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
-st.error("🔧 **Printerkrøll eller misnøye?** Hvis du ikke klarer å fikse det selv, henvend deg til **Automasjons Avd.**")
 
 # --- NYTT: ADMIN BANNER ---
 if st.session_state.admin_beskjed:
